@@ -105,8 +105,8 @@ def detect(frame):
 
 
 # ---------------- LOAD IMAGES ----------------
-lane1_path = "C:/Users/hkuma/Desktop/smart-traffic-ai/lane1.jpg"
-lane2_path = "C:/Users/hkuma/Desktop/smart-traffic-ai/lane2.jpg"
+lane1_path = "lane1.jpg"
+lane2_path = "lane2.jpg"
 
 frame1 = cv2.imread(lane1_path)
 frame2 = cv2.imread(lane2_path)
