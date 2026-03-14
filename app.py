@@ -14,7 +14,7 @@ st.warning(
 )
 
 # ---------------- LOAD MODEL ----------------
-model = YOLO(r"C:/Users/hkuma/runs/detect/train14/weights/best.pt")
+model = YOLO("best.pt")
 
 VEHICLE_CLASSES = {"car","bus","truck","motorcycle","motorbike"}
 AMBULANCE_CLASS = "ambulance"
