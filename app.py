@@ -1,127 +1,220 @@
 import streamlit as st
 import cv2
 from ultralytics import YOLO
-from PIL import Image
-import numpy as np
+import streamlit.components.v1 as components
 
-# ---------------- STREAMLIT PAGE ----------------
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="AI Smart Traffic Signal", layout="wide")
 
-st.set_page_config(page_title="Smart Traffic AI", layout="wide")
+st.title("🚦 AI Smart Traffic Signal System")
 
-st.title("🚦 AI Smart Traffic Management System")
+st.warning(
+"NOTE: This system currently uses sample images for demonstration purposes. "
+"In the final implementation, live traffic footage will be captured using external cameras."
+)
 
-# ---------------- LOAD MODEL (CACHED) ----------------
+# ---------------- LOAD MODELS ----------------
+vehicle_model = YOLO("yolov8n.pt")   # Pretrained model for vehicles
+ambulance_model = YOLO("best.pt")    # Custom trained ambulance model
 
-@st.cache_resource
-def load_model():
-    model = YOLO("best.pt")   # your trained ambulance model
-    return model
-
-model = load_model()
-
-# ---------------- VEHICLE CLASSES ----------------
-
-VEHICLE_CLASSES = ["car","bus","truck","motorcycle","bicycle"]
+VEHICLE_CLASSES = {"car","bus","truck","motorcycle"}
 AMBULANCE_CLASS = "ambulance"
 
-# ---------------- IMAGE PROCESS FUNCTION ----------------
 
-def process_image(image):
+# ---------------- TRAFFIC LIGHT UI ----------------
+def traffic_light(signal):
 
-    frame = np.array(image)
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    if signal == "RED":
+        red = "red"
+        yellow = "#222"
+        green = "#222"
 
-    results = model(frame)
+    elif signal == "YELLOW":
+        red = "#222"
+        yellow = "yellow"
+        green = "#222"
+
+    else:
+        red = "#222"
+        yellow = "#222"
+        green = "lime"
+
+    html = f"""
+    <div style="display:flex;justify-content:center">
+        <div style="
+            background:black;
+            width:80px;
+            padding:15px;
+            border-radius:15px;
+            box-shadow:0px 0px 15px grey;
+        ">
+
+            <div style="
+                width:40px;
+                height:40px;
+                border-radius:50%;
+                background:{red};
+                margin:10px auto;
+            "></div>
+
+            <div style="
+                width:40px;
+                height:40px;
+                border-radius:50%;
+                background:{yellow};
+                margin:10px auto;
+            "></div>
+
+            <div style="
+                width:40px;
+                height:40px;
+                border-radius:50%;
+                background:{green};
+                margin:10px auto;
+            "></div>
+
+        </div>
+    </div>
+    """
+
+    return html
+
+
+# ---------------- DETECTION FUNCTION ----------------
+def detect(frame):
+
+    vehicle_results = vehicle_model(frame)
+    ambulance_results = ambulance_model(frame)
 
     vehicle_count = 0
     ambulance_detected = False
 
-    for r in results:
-        boxes = r.boxes
+    # -------- VEHICLE DETECTION --------
+    for r in vehicle_results:
 
-        for box in boxes:
+        for box in r.boxes:
 
-            cls_id = int(box.cls[0])
-            conf = float(box.conf[0])
-            label = model.names[cls_id]
+            cls = int(box.cls[0])
+            label = vehicle_model.names[cls]
 
-            if conf < 0.40:
-                continue
-
-            x1,y1,x2,y2 = map(int, box.xyxy[0])
-
-            # Ambulance detection
-            if label == AMBULANCE_CLASS:
-                ambulance_detected = True
-
-            # Vehicle counting
             if label in VEHICLE_CLASSES:
                 vehicle_count += 1
 
-            # Draw bounding box
-            cv2.rectangle(frame,(x1,y1),(x2,y2),(255,0,255),2)
-            cv2.putText(frame,f"{label} {conf:.2f}",
-                        (x1,y1-10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,(255,0,255),2)
+                x1,y1,x2,y2 = map(int, box.xyxy[0])
+                cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
+                cv2.putText(frame,label,(x1,y1-5),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,(0,255,0),2)
 
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # -------- AMBULANCE DETECTION --------
+    for r in ambulance_results:
 
-    return frame, vehicle_count, ambulance_detected
+        for box in r.boxes:
+
+            cls = int(box.cls[0])
+            label = ambulance_model.names[cls]
+            conf = float(box.conf)
+
+            if label == AMBULANCE_CLASS and conf > 0.4:
+
+                ambulance_detected = True
+
+                x1,y1,x2,y2 = map(int, box.xyxy[0])
+                cv2.rectangle(frame,(x1,y1),(x2,y2),(255,0,255),3)
+
+                cv2.putText(frame,
+                            "AMBULANCE",
+                            (x1,y1-5),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (255,0,255),
+                            2)
+
+    return vehicle_count, ambulance_detected, frame
 
 
-# ---------------- LAYOUT ----------------
+# ---------------- LOAD IMAGES ----------------
+lane1_path = "lane1.jpg"
+lane2_path = "lane2.jpg"
 
-col1,col2 = st.columns(2)
+frame1 = cv2.imread(lane1_path)
+frame2 = cv2.imread(lane2_path)
 
-# ---------------- LANE 1 ----------------
+if frame1 is None or frame2 is None:
+    st.error("Image files not found. Check lane1.jpg and lane2.jpg")
+    st.stop()
+
+
+# ---------------- RUN DETECTION ----------------
+vehicles1, ambulance1, frame1 = detect(frame1)
+vehicles2, ambulance2, frame2 = detect(frame2)
+
+
+# ---------------- TRAFFIC DECISION ----------------
+if ambulance1:
+
+    signal1 = "GREEN"
+    signal2 = "RED"
+    decision = "🚑 Ambulance Priority → Lane 1"
+
+elif ambulance2:
+
+    signal1 = "RED"
+    signal2 = "GREEN"
+    decision = "🚑 Ambulance Priority → Lane 2"
+
+else:
+
+    if vehicles1 >= vehicles2:
+
+        signal1 = "GREEN"
+        signal2 = "RED"
+        decision = "🚦 Lane 1 Cleared"
+
+    else:
+
+        signal1 = "RED"
+        signal2 = "GREEN"
+        decision = "🚦 Lane 2 Cleared"
+
+
+# ---------------- AMBULANCE ALERT ----------------
+if ambulance1 or ambulance2:
+    st.error("🚑 Ambulance Detected! Priority Signal Activated")
+
+
+# ---------------- CAMERA DISPLAY ----------------
+col1, col2 = st.columns(2)
 
 with col1:
 
     st.subheader("Lane 1 Camera")
-
-    img1 = Image.open("lane1.jpg")
-
-    frame1,vehicles1,ambulance1 = process_image(img1)
-
-    st.image(frame1,use_container_width=True)
-
+    st.image(frame1, channels="BGR")
     st.write(f"Vehicles Detected: {vehicles1}")
-
-# ---------------- LANE 2 ----------------
 
 with col2:
 
     st.subheader("Lane 2 Camera")
-
-    img2 = Image.open("lane2.jpg")
-
-    frame2,vehicles2,ambulance2 = process_image(img2)
-
-    st.image(frame2,use_container_width=True)
-
+    st.image(frame2, channels="BGR")
     st.write(f"Vehicles Detected: {vehicles2}")
 
 
-# ---------------- AMBULANCE PRIORITY ----------------
+# ---------------- TRAFFIC SIGNAL UI ----------------
+st.markdown("## 🚦 Traffic Signal Status")
 
-if ambulance1 or ambulance2:
+col3, col4 = st.columns(2)
 
-    st.error("🚑 Ambulance Detected! Priority Signal Activated")
+with col3:
 
-    if ambulance1:
-        st.success("Lane 1 → GREEN Signal")
+    st.subheader("Lane 1 Signal")
+    components.html(traffic_light(signal1), height=200)
 
-    if ambulance2:
-        st.success("Lane 2 → GREEN Signal")
+with col4:
 
-else:
+    st.subheader("Lane 2 Signal")
+    components.html(traffic_light(signal2), height=200)
 
-    if vehicles1 > vehicles2:
-        st.success("Lane 1 → GREEN Signal")
 
-    elif vehicles2 > vehicles1:
-        st.success("Lane 2 → GREEN Signal")
-
-    else:
-        st.warning("Equal Traffic → Default Timer Running")
+# ---------------- TRAFFIC DECISION ----------------
+st.markdown("## 🚦 Traffic Decision")
+st.info(decision)
